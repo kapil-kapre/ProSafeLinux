@@ -346,34 +346,51 @@ class ProSafeLinux:
         else:
             return self.parse_data(message)
 
-    def queryall(self, cmd_arr, mac, with_address=False, use_ip_func=True):
-        "get some values from the switch, but do not change them"
-        # translate non-list to list
-        if type(cmd_arr).__name__ != 'tupe' and type(cmd_arr).__name__ != 'list':
-            cmd_arr = (cmd_arr, )
-        self.send_query(cmd_arr, mac, use_ip_func)
-        for message, address in self.recv_all():
-            if with_address:
-                yield (self.parse_data(message), address)
-            else:
-                yield self.parse_data(message)
-
     def transmit(self, cmddict, mac):
         "change something in the switch, like name, mac ..."
         transmit_counter = 0
         ipadr = self.ip_from_mac(mac)
         data = self.baseudp(destmac=mac, ctype=self.CTYPE_TRANSMIT_REQUEST)
-        firmwarevers = self.query(self.get_cmd_by_name("firmwarever"), mac)
-        firmwarevers = list(firmwarevers.values())[0].translate({ord("."):None})
-        # New firmwares put capital leter V in front ...
-        if "V" == firmwarevers[0]:
-            firmwarevers = firmwarevers[1:]
+
+        # Normalize response into a string (empty string if no/invalid response)
+        firmware_resp = self.query(self.get_cmd_by_name("firmwarever"), mac)
+
+        # Normalize response into a string (empty string if no/invalid response)
+        firmware_str = ""
+        if firmware_resp is False or firmware_resp is None:
+            firmware_str = ""
+        elif isinstance(firmware_resp, dict):
+            # dict values may be a single value or a list; take the first entry safely
+            first_val = next(iter(firmware_resp.values()), "")
+            if isinstance(first_val, list):
+                firmware_str = str(first_val[0]) if first_val else ""
+            else:
+                firmware_str = str(first_val)
+        else:
+            # fallback: coerce to string
+            firmware_str = str(firmware_resp)
+
+        # Remove dots from the firmware string
+        if firmware_str:
+            firmware_str = firmware_str.translate({ord("."): None})
+
+        # New firmwares put capital letter V in front — strip it if present
+        if firmware_str and firmware_str[0] == "V":
+            firmware_str = firmware_str[1:]
+
+        # Use firmware_str for further logic, but guard numeric conversion
+        firmwarevers = firmware_str
 
         if type(cmddict).__name__ == 'dict':
             if self.CMD_PASSWORD in cmddict:
-                if int(firmwarevers) > 10004:
-                    print("using password hack on firmware: %s" % 
-                            (firmwarevers))
+                # Only attempt numeric comparison if firmwarevers is convertible
+                try:
+                    fv_int = int(firmwarevers)
+                except (ValueError, TypeError):
+                    fv_int = 0
+
+                if fv_int > 10004:
+                    print("using password hack on firmware: %s" % (firmwarevers))
                     _hashkey = "NtgrSmartSwitchRock"
                     _plainpass = cmddict[self.CMD_PASSWORD]
                     _password = ""
