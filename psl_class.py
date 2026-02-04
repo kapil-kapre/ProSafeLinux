@@ -346,6 +346,43 @@ class ProSafeLinux:
         else:
             return self.parse_data(message)
 
+    def queryall(self, cmd_arr, mac, with_address=False, use_ip_func=True):
+        """Send a query and yield all responses as they arrive
+
+        Normalizes non-list cmd_arr like query(), uses send_query to transmit the
+        request and then repeatedly calls recv(), parsing and yielding each
+        response with parse_data(). When with_address is True yields tuples
+        (parsed, address).
+        """
+        # Normalize non-list to list (keeps same style as query())
+        if type(cmd_arr).__name__ != 'tuple' and type(cmd_arr).__name__ != 'list':
+            cmd_arr = (cmd_arr, )
+
+        # Send the broadcast/query packet
+        self.send_query(cmd_arr, mac, use_ip_func)
+
+        # Receive loop: collect responses until we get no message after a few retries
+        transmit_counter = 0
+        while True:
+            message, address = self.recv()
+            if message is None:
+                # no message right now; retry a few times with a short sleep
+                transmit_counter += 1
+                if transmit_counter >= 3:
+                    # nothing more coming
+                    break
+                time.sleep(1)
+                continue
+
+            # reset counter on successful receive
+            transmit_counter = 0
+
+            parsed = self.parse_data(message)
+            if with_address:
+                yield (parsed, address)
+            else:
+                yield parsed
+
     def transmit(self, cmddict, mac):
         "change something in the switch, like name, mac ..."
         transmit_counter = 0
