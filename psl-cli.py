@@ -12,6 +12,7 @@ import psl_typ
 
 def discover(args, switch):
     "Search for Switches"
+    found = False
     print("Searching for ProSafe Plus Switches ...\n")
     for data in switch.discover():
         found = True
